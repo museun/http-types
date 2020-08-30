@@ -1,5 +1,5 @@
-use async_std::io::prelude::*;
-use async_std::io::{self, Cursor};
+use futures_lite::*;
+
 use serde::{de::DeserializeOwned, Serialize};
 
 use std::fmt::{self, Debug};
@@ -54,7 +54,7 @@ pin_project_lite::pin_project! {
     /// and not rely on the fallback mechanisms. However, they're still there if you need them.
     pub struct Body {
         #[pin]
-        reader: Box<dyn BufRead + Unpin + Send + Sync + 'static>,
+        reader: Box<dyn AsyncBufRead + Unpin + Send + Sync + 'static>,
         mime: Mime,
         length: Option<usize>,
     }
@@ -102,7 +102,7 @@ impl Body {
     /// req.set_body(Body::from_reader(cursor, Some(len)));
     /// ```
     pub fn from_reader(
-        reader: impl BufRead + Unpin + Send + Sync + 'static,
+        reader: impl AsyncBufRead + Unpin + Send + Sync + 'static,
         len: Option<usize>,
     ) -> Self {
         Self {
@@ -125,7 +125,7 @@ impl Body {
     /// let body = Body::from_reader(cursor, None);
     /// let _ = body.into_reader();
     /// ```
-    pub fn into_reader(self) -> Box<dyn BufRead + Unpin + Send + Sync + 'static> {
+    pub fn into_reader(self) -> Box<dyn AsyncBufRead + Unpin + Send + Sync + 'static> {
         self.reader
     }
 
@@ -246,7 +246,7 @@ impl Body {
         let bytes = serde_json::to_vec(&json)?;
         let body = Self {
             length: Some(bytes.len()),
-            reader: Box::new(Cursor::new(bytes)),
+            reader: Box::new(io::Cursor::new(bytes)),
             mime: mime::JSON,
         };
         Ok(body)
@@ -304,13 +304,14 @@ impl Body {
     /// assert_eq!(&cat.name, "chashu");
     /// # Ok(()) }) }
     /// ```
+    #[cfg(feature = "serde_urlencoded")]
     pub fn from_form(form: &impl Serialize) -> crate::Result<Self> {
         let query = serde_urlencoded::to_string(form)?;
         let bytes = query.into_bytes();
 
         let body = Self {
             length: Some(bytes.len()),
-            reader: Box::new(Cursor::new(bytes)),
+            reader: Box::new(io::Cursor::new(bytes)),
             mime: mime::FORM,
         };
         Ok(body)
@@ -340,6 +341,7 @@ impl Body {
     /// assert_eq!(&cat.name, "chashu");
     /// # Ok(()) }) }
     /// ```
+    #[cfg(feature = "serde_urlencoded")]
     pub async fn into_form<T: DeserializeOwned>(self) -> crate::Result<T> {
         let s = self.into_string().await?;
         Ok(serde_urlencoded::from_str(&s).status(StatusCode::UnprocessableEntity)?)
@@ -455,7 +457,7 @@ impl<'a> From<&'a [u8]> for Body {
     }
 }
 
-impl Read for Body {
+impl AsyncRead for Body {
     #[allow(missing_doc_code_examples)]
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -466,7 +468,7 @@ impl Read for Body {
     }
 }
 
-impl BufRead for Body {
+impl AsyncBufRead for Body {
     #[allow(missing_doc_code_examples)]
     fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&'_ [u8]>> {
         let this = self.project();
@@ -517,6 +519,7 @@ mod test {
     }
 
     #[async_std::test]
+    #[cfg(feature = "serde_urlencoded")]
     async fn form_status() {
         #[derive(Debug, Deserialize)]
         struct Foo {

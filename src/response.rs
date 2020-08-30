@@ -1,5 +1,5 @@
-use async_std::io::{self, BufRead, Read};
-use async_std::sync;
+use futures_lite::*;
+use async_channel as sync;
 
 use std::convert::{Into, TryInto};
 use std::fmt::Debug;
@@ -99,7 +99,7 @@ impl Response {
         let status = status
             .try_into()
             .expect("Could not convert into a valid `StatusCode`");
-        let (trailers_sender, trailers_receiver) = sync::channel(1);
+        let (trailers_sender, trailers_receiver) = sync::bounded(1);
         Self {
             status,
             headers: Headers::new(),
@@ -428,6 +428,7 @@ impl Response {
     /// assert_eq!(&cat.name, "chashu");
     /// # Ok(()) }) }
     /// ```
+    #[cfg(feature = "serde_urlencoded")]
     pub async fn body_form<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
         let body = self.take_body();
         body.into_form().await
@@ -665,7 +666,7 @@ impl Clone for Response {
     }
 }
 
-impl Read for Response {
+impl AsyncRead for Response {
     #[allow(missing_doc_code_examples)]
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -676,7 +677,7 @@ impl Read for Response {
     }
 }
 
-impl BufRead for Response {
+impl AsyncBufRead for Response {
     #[allow(missing_doc_code_examples)]
     fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&'_ [u8]>> {
         let this = self.project();

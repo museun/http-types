@@ -50,8 +50,8 @@
 use crate::headers::{
     HeaderName, HeaderValues, Headers, Iter, IterMut, Names, ToHeaderValues, Values,
 };
-use async_std::prelude::*;
-use async_std::sync;
+use futures_lite::*;
+use async_channel as sync;
 
 use std::convert::Into;
 use std::future::Future;
@@ -226,7 +226,7 @@ impl Sender {
     ///
     /// The channel will be consumed after having sent trailers.
     pub async fn send(self, trailers: Trailers) {
-        self.sender.send(trailers).await
+        let _ = self.sender.send(trailers).await;
     }
 }
 

@@ -1,5 +1,5 @@
-use async_std::io::{self, BufRead, Read};
-use async_std::sync;
+use futures_lite::*;
+use async_channel as sync;
 
 use std::convert::{Into, TryInto};
 use std::mem;
@@ -52,7 +52,7 @@ impl Request {
         U::Error: std::fmt::Debug,
     {
         let url = url.try_into().expect("Could not convert into a valid url");
-        let (trailers_sender, trailers_receiver) = sync::channel(1);
+        let (trailers_sender, trailers_receiver) = sync::bounded(1);
         Self {
             method,
             url,
@@ -402,6 +402,7 @@ impl Request {
     /// assert_eq!(&cat.name, "chashu");
     /// # Ok(()) }) }
     /// ```
+    #[cfg(feature = "serde_urlencoded")]
     pub async fn body_form<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
         let body = self.take_body();
         body.into_form().await
@@ -635,6 +636,7 @@ impl Request {
     /// assert_eq!(selections["width"], "narrow");
     /// assert_eq!(selections["height"], "tall");
     /// ```
+    #[cfg(feature = "serde_eq")]
     pub fn query<T: serde::de::DeserializeOwned>(&self) -> crate::Result<T> {
         // Default to an empty query string if no query parameter has been specified.
         // This allows successful deserialisation of structs where all fields are optional
@@ -670,6 +672,7 @@ impl Request {
     /// req.set_query(&query).unwrap();
     /// assert_eq!(req.url().query(), Some("page=2&topics[0]=rust&topics[1]=crabs&topics[2]=crustaceans"));
     /// ```
+    #[cfg(feature = "serde_qs")]
     pub fn set_query(&mut self, query: &impl Serialize) -> crate::Result<()> {
         let query = serde_qs::to_string(query)
             .map_err(|e| crate::Error::from_str(StatusCode::BadRequest, format!("{}", e)))?;
@@ -886,7 +889,7 @@ impl Clone for Request {
     }
 }
 
-impl Read for Request {
+impl AsyncRead for Request {
     #[allow(missing_doc_code_examples)]
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -897,7 +900,7 @@ impl Read for Request {
     }
 }
 
-impl BufRead for Request {
+impl AsyncBufRead for Request {
     #[allow(missing_doc_code_examples)]
     fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&'_ [u8]>> {
         let this = self.project();
